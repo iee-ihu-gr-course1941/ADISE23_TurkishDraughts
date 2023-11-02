@@ -1,1 +1,1 @@
-# ADISE23_TurkishDraughts
+# ADISE23_WizardCardGame
