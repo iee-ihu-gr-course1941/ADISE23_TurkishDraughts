@@ -1,4 +1,3 @@
-
 CREATE OR REPLACE TABLE cards (
   Cid tinyint NOT NULL,
   Figure enum('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'J', 'W') NOT NULL,
@@ -81,7 +80,6 @@ CREATE OR REPLACE TABLE `gamedetails` (
 	`Status` ENUM('Not active', 'Waiting', 'Playing', 'Finished') NOT NULL DEFAULT 'Not active',
 	`Result` ENUM('P1','P2', 'P3', 'P4') NULL DEFAULT NULL
 );
-INSERT INTO gamedetails VALUES ('Not active', NULL);
 
 CREATE OR REPLACE TABLE `gamestate` (
     `PlayOrder` INTEGER,
@@ -94,30 +92,6 @@ CREATE OR REPLACE TABLE `gamestate` (
     `Trump_Class` ENUM('Human', 'Elves', 'Dwarves', 'Giants', 'J', 'W', 'None') NOT NULL DEFAULT 'None', 
     PRIMARY KEY (`Pid`)
 );
-
--- ==================== FOR TESTING ==========================
--- SELECT * FROM cards WHERE Pid<>0 and Pid<>6 ORDER BY Pid;
--- SELECT * FROM gamestate;
--- SELECT * FROM players;
--- CALL PrepareGame();
--- INSERT INTO players (Pid, Username, Token) VALUES(1, 'KGL', 'kasdf');
--- INSERT INTO players (Pid, Username, Token) VALUES(2, 'AGL', 'aasdf');
--- INSERT INTO players (Pid, Username, Token) VALUES(3, 'WGL', 'wasdf');
--- INSERT INTO players (Pid, Username, Token) VALUES(4, 'FGL', 'fasdf');
--- CALL Deal_cards();
--- CALL Trump_card();
--- SET @exitcode_value = NULL;
--- CALL Place_bet(1, 0, @exitcode_value);
--- CALL Place_bet(2, 1, @exitcode_value);
--- CALL Place_bet(3, 0, @exitcode_value);
--- CALL Place_bet(4, 1, @exitcode_value);
-
--- CALL Play_trick(1, 29, @exitcode_value);	-- Pid, cid
--- CALL Play_trick(2, 18, @exitcode_value);	-- Pid, cid
--- CALL Play_trick(3, 56, @exitcode_value);	-- Pid, cid
--- CALL Play_trick(4, 14, @exitcode_value);	-- Pid, cid
--- CALL FindWinner(@exitcode_value);
--- CALL Sum_points();
 
 -- 0. Start game.
 DELIMITER $$
@@ -192,12 +166,15 @@ DELIMITER $$
 CREATE OR REPLACE PROCEDURE Place_bet(IN p INTEGER, IN b INTEGER, OUT exitcode TINYINT)
 BEGIN
     
-    
     IF ((SELECT Bet FROM gamestate WHERE Pid = p) IS NULL) THEN
 		
         IF(b <= (SELECT Rounds FROM gamestate WHERE Pid = p)) THEN
-            UPDATE gamestate SET Bet = b WHERE Pid = p;
-            SET exitcode = 0;	-- All good.
+			IF(b >= 0) THEN
+				UPDATE gamestate SET Bet = b WHERE Pid = p;
+				SET exitcode = 0;	-- All good.	
+			ELSE
+				SET exitcode = 3;	-- Error: Place a positive number.
+			END IF;
         ELSE
             SET exitcode = 1; 	-- Advice: You will lose whatever happens.
         END IF;
@@ -211,10 +188,17 @@ END $$
 -- 4. Play the tricks (Round No K, has K tricks therefore each player has K cards). [x4]
 DELIMITER $$
 CREATE OR REPLACE PROCEDURE Play_trick(IN p INTEGER, IN Card_played TINYINT, OUT exitcode TINYINT)
+MAIN:
 BEGIN
-	
+
+	SET @Bets_played = (SELECT COUNT(Pid) FROM gamestate WHERE Bet IS NOT NULL);
+	IF(@Bets_played < 4) THEN 
+		SET exitcode = 4;
+		LEAVE MAIN;
+	END IF;
+    
     IF((SELECT Pid FROM cards WHERE cid = Card_played) = p) THEN
-		SET exitcode = 3;	-- Error: Not the appropriate card!
+		SET exitcode = 3;	-- Not the appropriate card.
         
         -- Follows Master_Class OR throws Joker/Wizard OR does NOT follow Master_Class (iff he doesn't have Master_Class card on his hand)?
 		IF((SELECT Master_Class FROM gamestate LIMIT 1) = (SELECT Class FROM cards WHERE cid = Card_played)
@@ -241,7 +225,7 @@ BEGIN
 			END IF;
 		 END IF;
      ELSE
-		SET exitcode = 2;				-- Error: Does not have the card on his hand!
+		SET exitcode = 2;				-- Does not have the card on his hand.
 	END IF;
 	SELECT exitcode;
     
@@ -250,8 +234,14 @@ END $$
 -- 5a. Find who won the trick. If he won, he will play first on the next trick.
 DELIMITER $$
 CREATE OR REPLACE PROCEDURE FindWinner(OUT exitcode TINYINT)	-- Did he win the trick? If so, Rounds_won + 1 and PlayOrder changes accordingly.
+MAIN:
 BEGIN
 	
+    SET @Cards_played = (SELECT COUNT(Card_played) FROM gamestate WHERE Pid IS NOT NULL);
+	IF(@Cards_played < 4) THEN 
+		SET exitcode = 5;			-- Not all players played.
+		LEAVE MAIN;
+	END IF;
     /* 
 		Did someone play a wizard? If so the first one who played it, wins.
 		Did someone play a trump card? If so the highest of them, wins.
@@ -278,7 +268,7 @@ BEGIN
     SELECT(exitcode);
     
     CALL CalcPlayOrder(@winner);
-
+    
 END $$
 
 -- 5b. Calculate the PlayOrder.
@@ -313,67 +303,105 @@ END $$
 
 -- 6. Add/Subtract points for this round + reset the board.
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE Sum_points()
+CREATE OR REPLACE PROCEDURE Sum_points(OUT exitcode TINYINT)
 BEGIN
-	SET @B1 := (SELECT Bet FROM gamestate WHERE Pid=1);
-    SET @B2 := (SELECT Bet FROM gamestate WHERE Pid=2);
-    SET @B3 := (SELECT Bet FROM gamestate WHERE Pid=3);
-    SET @B4 := (SELECT Bet FROM gamestate WHERE Pid=4);
+	
+	SET @temp := (SELECT COUNT(Cid) FROM cards WHERE Pid<>0 and Pid<>6 and Pid<>5);
+	
+    if(@temp = 0) THEN
+		SET @B1 := (SELECT Bet FROM gamestate WHERE Pid=1);
+		SET @B2 := (SELECT Bet FROM gamestate WHERE Pid=2);
+		SET @B3 := (SELECT Bet FROM gamestate WHERE Pid=3);
+		SET @B4 := (SELECT Bet FROM gamestate WHERE Pid=4);
+		
+		SET @Rw1 := (SELECT Rounds_won FROM gamestate WHERE Pid=1);
+		SET @Rw2 := (SELECT Rounds_won FROM gamestate WHERE Pid=2);
+		SET @Rw3 := (SELECT Rounds_won FROM gamestate WHERE Pid=3);
+		SET @Rw4 := (SELECT Rounds_won FROM gamestate WHERE Pid=4);
+		
+		
+		IF(SELECT ABS(@B1-@Rw1) = 0) THEN
+			UPDATE players SET Total_points = Total_points + 20 + (@Rw1 * 10) WHERE Pid = 1;
+		ELSE
+			UPDATE players SET Total_points = Total_points - (ABS(@B1-@Rw1) * 10) WHERE Pid = 1;
+		END IF;
+		
+		IF(SELECT ABS(@B2-@Rw2) = 0) THEN
+			UPDATE players SET Total_points = Total_points + 20 + (@Rw2 * 10) WHERE Pid = 2;
+		ELSE
+			UPDATE players SET Total_points = Total_points - (ABS(@B2-@Rw2) * 10) WHERE Pid = 2;
+		END IF;
+		
+		IF(SELECT ABS(@B3-@Rw3) = 0) THEN
+			UPDATE players SET Total_points = Total_points + 20 + (@Rw3 * 10) WHERE Pid = 3;
+		ELSE
+			UPDATE players SET Total_points = Total_points - (ABS(@B3-@Rw3) * 10) WHERE Pid = 3;
+		END IF;
+		
+		IF(SELECT ABS(@B4-@Rw4) = 0) THEN
+			UPDATE players SET Total_points = Total_points + 20 + (@Rw4 * 10) WHERE Pid = 4;
+		ELSE
+			UPDATE players SET Total_points = Total_points - (ABS(@B4-@Rw4) * 10) WHERE Pid = 4;
+		END IF;
+		
+		UPDATE gamestate SET Bet = NULL, Rounds_won = 0, Master_Class = 'J', Rounds = Rounds + 1;
+		UPDATE cards SET Pid = 0 WHERE Pid = 5;
+        CALL Deal_cards();
+        CALL Trump_card();
+        SET exitcode = 0;
+    ELSE
+		SET exitcode = 1;
+	END IF;
     
-    SET @Rw1 := (SELECT Rounds_won FROM gamestate WHERE Pid=1);
-    SET @Rw2 := (SELECT Rounds_won FROM gamestate WHERE Pid=2);
-    SET @Rw3 := (SELECT Rounds_won FROM gamestate WHERE Pid=3);
-    SET @Rw4 := (SELECT Rounds_won FROM gamestate WHERE Pid=4);
-    
-    
-    IF(SELECT ABS(@B1-@Rw1) = 0) THEN
-		UPDATE players SET Total_points = Total_points + 20 + (@Rw1 * 10) WHERE Pid = 1;
+END $$
+
+DELIMITER $$
+CREATE OR REPLACE PROCEDURE Who_won(OUT exitcode TINYINT)
+BEGIN
+	IF((SELECT Rounds FROM gamestate LIMIT 1) = 16) THEN
+		SELECT Pid INTO exitcode FROM players ORDER BY Total_points DESC LIMIT 1;
+        UPDATE gamedetails SET Status = 'Finished', Result = exitcode;
 	ELSE
-		UPDATE players SET Total_points = Total_points - (ABS(@B1-@Rw1) * 10) WHERE Pid = 1;
+		SET exitcode = 5;		-- Not 15th round yet.
     END IF;
-    
-    IF(SELECT ABS(@B2-@Rw2) = 0) THEN
-		UPDATE players SET Total_points = Total_points + 20 + (@Rw2 * 10) WHERE Pid = 2;
-	ELSE
-		UPDATE players SET Total_points = Total_points - (ABS(@B2-@Rw2) * 10) WHERE Pid = 2;
-    END IF;
-    
-    IF(SELECT ABS(@B3-@Rw3) = 0) THEN
-		UPDATE players SET Total_points = Total_points + 20 + (@Rw3 * 10) WHERE Pid = 3;
-	ELSE
-		UPDATE players SET Total_points = Total_points - (ABS(@B3-@Rw3) * 10) WHERE Pid = 3;
-    END IF;
-    
-    IF(SELECT ABS(@B4-@Rw4) = 0) THEN
-		UPDATE players SET Total_points = Total_points + 20 + (@Rw4 * 10) WHERE Pid = 4;
-	ELSE
-		UPDATE players SET Total_points = Total_points - (ABS(@B4-@Rw4) * 10) WHERE Pid = 4;
-    END IF;
-    
-    UPDATE gamestate SET Bet = NULL, Rounds_won = 0, Master_Class = 'J', Rounds = Rounds + 1;
-    UPDATE cards SET Pid = 0 WHERE Pid = 5;
-    
 END $$
 
 /* =========== */
 /* |UTILITIES| */
 /* =========== */
+
 DELIMITER $$
 CREATE OR REPLACE PROCEDURE AddPlayer(IN Pname VARCHAR(50), IN t VARCHAR(50), OUT ExitCode INTEGER)
 BEGIN
-    SET @NumOfP := (SELECT COUNT(*) FROM players);
+   SET @NumOfP := (SELECT COUNT(*) FROM players);
 
-    IF EXISTS (SELECT * FROM players WHERE Token = t) THEN
-        SET ExitCode = 2;										-- Error: Player already exists!
-    ELSEIF @NumOfP < 4 THEN
-        INSERT INTO players(Username, Token) VALUES (Pname, t);
-        UPDATE gamedetails SET status = `Waiting`, Result = NULL;
-        SET ExitCode = 0;                                       -- All good.
-    ELSE
-        SET ExitCode = 1;                                       -- Error: Only 4 players can play the game!
-    END IF;
+   IF EXISTS (SELECT * FROM players WHERE Token = t) THEN
+      SET ExitCode = 2;										-- Warning: Player already exists
+   ELSE
+		IF @NumOfP < 4 THEN
+			INSERT INTO players(Username, Token) VALUES (Pname, t);
+			UPDATE gamedetails SET status = 'Waiting', Result = NULL;
+			SET ExitCode = 0;
+            IF (@NumOfP = 4) THEN
+				UPDATE gamedetails SET status = 'Playing', Result = NULL;
+			END IF;
+		ELSE
+			SET ExitCode = 1;								-- Error: Max Players
+		END IF;
+   END IF;
 
-    SELECT ExitCode;	
+   SELECT ExitCode;	
+END $$
+
+DELIMITER $$
+CREATE OR REPLACE PROCEDURE CheckPlayers(OUT exitcode TINYINT)
+BEGIN
+	SET @state = (SELECT COUNT(Status) FROM gamedetails WHERE Status = 'Playing');
+    IF(@state = 1) THEN
+		SET exitcode = 0;
+	ELSE
+		SET exitcode = 1;
+	END IF;
 END $$
 
 DELIMITER $$
@@ -391,13 +419,13 @@ END $$
 DELIMITER $$
 CREATE OR REPLACE PROCEDURE AllowedToPlay(IN p INTEGER)
 BEGIN
-    SET @PlayerToPlay = (SELECT pid FROM gamestate WHERE PlayOrder = 1);
+  SET @PlayerToPlay = (SELECT pid FROM gamestate WHERE PlayOrder = 1);
 
-    IF p = @PlayerToPlay THEN
-        SET @Allowed = 0;
-    ELSE
-        SET @Allowed = 1;	
-    END IF;
-    
-    SELECT @Allowed;
+  IF p = @PlayerToPlay THEN
+   	SET @Allowed = 0;
+   ELSE
+	SET @Allowed = 1;	
+  END IF;
+  
+  SELECT @Allowed;
 END $$
