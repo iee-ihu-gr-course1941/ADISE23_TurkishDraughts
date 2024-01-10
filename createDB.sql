@@ -84,7 +84,7 @@ CREATE OR REPLACE TABLE `gamedetails` (
 CREATE OR REPLACE TABLE `gamestate` (
     `PlayOrder` INTEGER,
     `Pid` INTEGER NOT NULL,
-    `Rounds` INTEGER DEFAULT 1,         
+    `Rounds` INTEGER DEFAULT 0,         
     `Bet` INTEGER NULL DEFAULT NULL,             
     `Rounds_won` INTEGER DEFAULT 0,
     `Card_played` TINYINT NULL DEFAULT NULL,
@@ -92,6 +92,29 @@ CREATE OR REPLACE TABLE `gamestate` (
     `Trump_Class` ENUM('Human', 'Elves', 'Dwarves', 'Giants', 'J', 'W', 'None') NOT NULL DEFAULT 'None', 
     PRIMARY KEY (`Pid`)
 );
+
+-- SELECT * FROM cards WHERE Pid<>0 and Pid<>6 ORDER BY Pid;
+-- SELECT * FROM gamestate;
+-- SELECT * FROM players;
+-- CALL PrepareGame();
+-- INSERT INTO players (Pid, Username, Token) VALUES(1, 'KGL', 'kasdf');
+-- INSERT INTO players (Pid, Username, Token) VALUES(2, 'AGL', 'aasdf');
+-- INSERT INTO players (Pid, Username, Token) VALUES(3, 'WGL', 'wasdf');
+-- INSERT INTO players (Pid, Username, Token) VALUES(4, 'FGL', 'fasdf');
+-- CALL Deal_cards();
+-- CALL Trump_card();
+-- SET @exitcode_value = NULL;
+-- CALL Place_bet(1, 1, @exitcode_value);
+-- CALL Place_bet(2, 0, @exitcode_value);
+-- CALL Place_bet(3, 0, @exitcode_value);
+-- CALL Place_bet(4, 0, @exitcode_value);
+
+-- CALL Play_trick(1, 2, @exitcode_value);	-- Pid, cid
+-- CALL Play_trick(2, 15, @exitcode_value);	-- Pid, cid
+-- CALL Play_trick(3, 42, @exitcode_value);	-- Pid, cid
+-- CALL Play_trick(4, 49, @exitcode_value);	-- Pid, cid
+-- CALL FindWinner(@exitcode_value);
+-- CALL Sum_points(@exitcode_value);
 
 -- 0. Start game.
 DELIMITER $$
@@ -163,7 +186,7 @@ END $$
 
 -- 3. Place bets. [x4]
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE Place_bet(IN p INTEGER, IN b INTEGER, OUT exitcode TINYINT)
+CREATE OR REPLACE PROCEDURE Place_bet(IN p INTEGER, IN b INTEGER)
 BEGIN
     
     IF ((SELECT Bet FROM gamestate WHERE Pid = p) IS NULL) THEN
@@ -171,34 +194,39 @@ BEGIN
         IF(b <= (SELECT Rounds FROM gamestate WHERE Pid = p)) THEN
 			IF(b >= 0) THEN
 				UPDATE gamestate SET Bet = b WHERE Pid = p;
-				SET exitcode = 0;	-- All good.	
+				SET @exitcode = 0;
+					-- All good.	
 			ELSE
-				SET exitcode = 3;	-- Error: Place a positive number.
+				SET @exitcode = 3;
+					-- Error: Place a positive number.
 			END IF;
         ELSE
-            SET exitcode = 1; 	-- Advice: You will lose whatever happens.
+            SET @exitcode = 1;
+			 	-- Advice: You will lose whatever happens.
         END IF;
 	ELSE
-		SET exitcode = 2; 		-- Error: You already have placed your bet.
+		SET @exitcode = 2;
+		 		-- Error: You already have placed your bet.
     END IF;
-    SELECT exitcode;
-    
+    SELECT @exitcode;
 END $$
 
 -- 4. Play the tricks (Round No K, has K tricks therefore each player has K cards). [x4]
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE Play_trick(IN p INTEGER, IN Card_played TINYINT, OUT exitcode TINYINT)
+CREATE OR REPLACE PROCEDURE Play_trick(IN p INTEGER, IN Card_played TINYINT)
 MAIN:
 BEGIN
 
 	SET @Bets_played = (SELECT COUNT(Pid) FROM gamestate WHERE Bet IS NOT NULL);
 	IF(@Bets_played < 4) THEN 
-		SET exitcode = 4;
+		SET @exitcode = 4;
+		SELECT @exitcode;
 		LEAVE MAIN;
 	END IF;
     
     IF((SELECT Pid FROM cards WHERE cid = Card_played) = p) THEN
-		SET exitcode = 3;	-- Not the appropriate card.
+		SET @exitcode = 3;
+			-- Not the appropriate card.
         
         -- Follows Master_Class OR throws Joker/Wizard OR does NOT follow Master_Class (iff he doesn't have Master_Class card on his hand)?
 		IF((SELECT Master_Class FROM gamestate LIMIT 1) = (SELECT Class FROM cards WHERE cid = Card_played)
@@ -208,12 +236,13 @@ BEGIN
         OR (((SELECT Master_Class FROM gamestate WHERE Master_Class LIMIT 1) NOT IN (SELECT Class FROM cards WHERE Pid = p)))) THEN
 			
         
-            SET exitcode = 0;			-- ΟΚ.
+            SET @exitcode = 0;
+				-- ΟΚ.
 			UPDATE cards
 			SET Pid = 5	
 			WHERE Cid = Card_played;
 			UPDATE gamestate SET Card_played = Card_played WHERE Pid = p;
-            CALL CalcPlayOrder(p);
+            CALL CalcPlayOrder(p+1);
             
 			IF((SELECT Master_Class FROM gamestate LIMIT 1) = 'J') THEN
             
@@ -221,25 +250,27 @@ BEGIN
 					UPDATE gamestate SET Master_Class = (SELECT Class FROM cards WHERE Cid = Card_played);
 				END IF;
                 
-                SET exitcode = 1;		-- OK, ALSO defined Master_Class.
+                SET @exitcode = 1;
+						-- OK, ALSO defined Master_Class.
 			END IF;
 		 END IF;
      ELSE
-		SET exitcode = 2;				-- Does not have the card on his hand.
+		SET @exitcode = 2;
+						-- Does not have the card on his hand.
 	END IF;
-	SELECT exitcode;
-    
+    SELECT @exitcode;	
 END $$
 
 -- 5a. Find who won the trick. If he won, he will play first on the next trick.
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE FindWinner(OUT exitcode TINYINT)	-- Did he win the trick? If so, Rounds_won + 1 and PlayOrder changes accordingly.
+CREATE OR REPLACE PROCEDURE FindWinner()	-- Did he win the trick? If so, Rounds_won + 1 and PlayOrder changes accordingly.
 MAIN:
 BEGIN
 	
     SET @Cards_played = (SELECT COUNT(Card_played) FROM gamestate WHERE Pid IS NOT NULL);
 	IF(@Cards_played < 4) THEN 
-		SET exitcode = 5;			-- Not all players played.
+		SET @exitcode = 5;
+		SELECT @exitcode;
 		LEAVE MAIN;
 	END IF;
     /* 
@@ -253,21 +284,21 @@ BEGIN
 	
     IF(@wizardwinner IS NOT NULL) THEN
 		UPDATE gamestate SET Rounds_won = Rounds_won + 1 WHERE Pid = @wizardwinner;
-        SET @winner = @wizardwinner;
+        SET @exitcode = @wizardwinner;
     ELSE
 		IF(@atouwinner IS NOT NULL) THEN 
 			UPDATE gamestate SET Rounds_won = Rounds_won + 1 WHERE Pid = @atouwinner;
-            SET @winner = @atouwinner;
+            SET @exitcode = @atouwinner;
         ELSE
 			UPDATE gamestate SET Rounds_won = Rounds_won + 1 WHERE Pid = @masterwinner;
-            SET @winner = @masterwinner;
+            SET @winnexitcodeer = @masterwinner;
         END IF;
     END IF;
     UPDATE gamestate SET Card_played = NULL;
-    SET exitcode = @winner;
-    SELECT(exitcode);
+    SELECT @exitcode;
     
-    CALL CalcPlayOrder(@winner);
+    
+    CALL CalcPlayOrder(@exitcode);
     
 END $$
 
@@ -303,7 +334,7 @@ END $$
 
 -- 6. Add/Subtract points for this round + reset the board.
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE Sum_points(OUT exitcode TINYINT)
+CREATE OR REPLACE PROCEDURE Sum_points()
 BEGIN
 	
 	SET @temp := (SELECT COUNT(Cid) FROM cards WHERE Pid<>0 and Pid<>6 and Pid<>5);
@@ -348,21 +379,26 @@ BEGIN
 		UPDATE cards SET Pid = 0 WHERE Pid = 5;
         CALL Deal_cards();
         CALL Trump_card();
-        SET exitcode = 0;
+        SET @exitcode = 0;
+		SELECT @exitcode;
     ELSE
-		SET exitcode = 1;
+		SET @exitcode = 1;
+		SELECT @exitcode;
 	END IF;
     
 END $$
 
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE Who_won(OUT exitcode TINYINT)
+CREATE OR REPLACE PROCEDURE Who_won()
 BEGIN
 	IF((SELECT Rounds FROM gamestate LIMIT 1) = 16) THEN
-		SELECT Pid INTO exitcode FROM players ORDER BY Total_points DESC LIMIT 1;
-        UPDATE gamedetails SET Status = 'Finished', Result = exitcode;
+		SELECT Pid INTO @exitcode FROM players ORDER BY Total_points DESC LIMIT 1;
+        UPDATE gamedetails SET Status = 'Finished', Result = @exitcode;
+        SELECT @exitcode;
 	ELSE
-		SET exitcode = 5;		-- Not 15th round yet.
+		SET @exitcode = 5;
+		SELECT @exitcode;
+		-- Not 15th round yet.
     END IF;
 END $$
 
@@ -371,37 +407,42 @@ END $$
 /* =========== */
 
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE AddPlayer(IN Pname VARCHAR(50), IN t VARCHAR(50), OUT ExitCode INTEGER)
+CREATE OR REPLACE PROCEDURE AddPlayer(IN Pname VARCHAR(50), IN t VARCHAR(50))
 BEGIN
    SET @NumOfP := (SELECT COUNT(*) FROM players);
 
    IF EXISTS (SELECT * FROM players WHERE Token = t) THEN
-      SET ExitCode = 2;										-- Warning: Player already exists
+      	SET @exitcode = 2;
+		SELECT @exitcode;									-- Warning: Player already exists
    ELSE
 		IF @NumOfP < 4 THEN
 			INSERT INTO players(Username, Token) VALUES (Pname, t);
 			UPDATE gamedetails SET status = 'Waiting', Result = NULL;
-			SET ExitCode = 0;
+			SET @exitcode = 0;
+			SELECT @exitcode;
             IF (@NumOfP = 4) THEN
 				UPDATE gamedetails SET status = 'Playing', Result = NULL;
 			END IF;
 		ELSE
-			SET ExitCode = 1;								-- Error: Max Players
+			SET @exitcode = 1;
+			SELECT @exitcode;								-- Error: Max Players
 		END IF;
    END IF;
 
-   SELECT ExitCode;	
 END $$
 
 DELIMITER $$
-CREATE OR REPLACE PROCEDURE CheckPlayers(OUT exitcode TINYINT)
+CREATE OR REPLACE PROCEDURE CheckPlayers()
 BEGIN
 	SET @state = (SELECT COUNT(Status) FROM gamedetails WHERE Status = 'Playing');
     IF(@state = 1) THEN
-		SET exitcode = 0;
+		SET @exitcode = 0;
+		SELECT @exitcode;
 	ELSE
-		SET exitcode = 1;
+		SET @exitcode = 1;
+		SELECT @exitcode;
 	END IF;
+    
 END $$
 
 DELIMITER $$
@@ -422,10 +463,16 @@ BEGIN
   SET @PlayerToPlay = (SELECT pid FROM gamestate WHERE PlayOrder = 1);
 
   IF p = @PlayerToPlay THEN
-   	SET @Allowed = 0;
+   		SET @exitcode = 0;
    ELSE
-	SET @Allowed = 1;	
+		SET @exitcode = 1;	
   END IF;
   
-  SELECT @Allowed;
+  SELECT @exitcode;
+END $$
+
+DELIMITER $$
+CREATE OR REPLACE PROCEDURE GetBoard ()
+BEGIN
+	SELECT g.Pid, g.Card_Played, c.Figure, c.Class FROM gamestate g JOIN cards c on (c.cid=g.Card_played) WHERE g.Pid IS NOT NULL;
 END $$

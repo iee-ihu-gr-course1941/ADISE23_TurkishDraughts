@@ -22,12 +22,13 @@ function FromTokenToPid(){
 
 function FindWinner(){
     global $mysqli;
-    $sql = "CALL FindWinner(?)";
+    $sql = "CALL FindWinner()";
     $st = $mysqli->prepare($sql);
 
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@Winner'];
+    $result = $result['@exitcode'];
+
 
     $st->close();
     return $result;
@@ -43,11 +44,10 @@ function PrepareNewGame(){  // DONE.
 
 }
 
-function AddPlayerIntoGame(){       // DONE.
+function AddPlayerIntoGame(){
     $session_id = session_id();
     global $mysqli;
-    $st = $mysqli->prepare("call AddPlayer (?, ?, @output)");
-    
+    $st = $mysqli->prepare("call AddPlayer (?, ?)");
     $st->bind_param('ss', $GLOBALS['input']['name'], $session_id);
     $st->execute();
     $st->bind_result($result);
@@ -56,7 +56,6 @@ function AddPlayerIntoGame(){       // DONE.
     $st->close();
     return ['result' => $result];
 }
-
 function DealCards(){           // DONE. MIGHT NOT USE
     global $mysqli;
     $sql = "Deal_cards()" ;
@@ -75,14 +74,15 @@ function TrumpCard(){           // DONE. MIGHT NOT USE
     $st->close();
 }
 
-function Place_bets($pid){          // DONE.
+function PlaceBets($pid){          // DONE.
     global $mysqli;
-    $sql =  'call Place_bets(?, ?, @output)';
+    $sql =  'call Place_bet(?, ?)';
     $st = $mysqli->prepare($sql);
 
     $st->bind_param('ii', $pid, $GLOBALS['input']['bet']);
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
+    $result = $result['@exitcode'];
 
     $st->close();
     return $result;
@@ -90,13 +90,13 @@ function Place_bets($pid){          // DONE.
 
 function PlayCards($pid){          // DONE.
     global $mysqli;
-    $sql =  'call Play_trick(?, ?, @output)';
+    $sql =  'call Play_trick(?, ?)';
     $st = $mysqli->prepare($sql);
 
     $st->bind_param('ii', $pid, $GLOBALS['input']['c']);
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@NotInHand'];
+    $result = $result['@exitcode'];
 
     $st->close();
     return $result;
@@ -127,14 +127,27 @@ function ShowHand($pid){
     return $result;
 }
 
-function CheckPlayers(){
+function GetBoard(){
     global $mysqli;
-    $sql = "CALL CheckPlayers(?)";
+    $sql = "call GetBoard()";
+
     $st = $mysqli->prepare($sql);
 
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@playing'];
+
+    $st->close();
+    return $result;
+}
+
+
+function CheckPlayers(){
+    global $mysqli;
+    $sql = "CALL CheckPlayers()";
+    $st = $mysqli->prepare($sql);
+
+    $st->execute();
+    $result = $st->get_result()->fetch_assoc();
 
     $st->close();
     return $result;
@@ -143,12 +156,12 @@ function CheckPlayers(){
 
 function CheckForWinner(){ // DONE.
     global $mysqli;
-    $sql = "CALL Who_won(?)";
+    $sql = "CALL Who_won()";
     $st = $mysqli->prepare($sql);
 
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@FWinner'];
+    $result = $result['@exitcode'];
 
     $st->close();
     return $result;
@@ -156,12 +169,11 @@ function CheckForWinner(){ // DONE.
 
 function SumPoints(){   // DONE.
     global $mysqli;
-    $sql = "CALL Sum_points(?)";
+    $sql = "CALL Sum_points()";
     $st = $mysqli->prepare($sql);
 
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@exitcode'];
 
     $st->close();
     return $result;
@@ -185,7 +197,7 @@ function AllowedToplay($pid){
     $st->bind_param('i', $pid);
     $st->execute();
     $result = $st->get_result()->fetch_assoc();
-    $result = $result['@Allowed'];
+    $result = $result['@exitcode'];
 
     $st->close();
     return $result;

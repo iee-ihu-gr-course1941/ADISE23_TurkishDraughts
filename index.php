@@ -32,10 +32,11 @@ if(CheckPlayers() == 1){    // DEN EXOUN MPEI OLOI OI PAIKTES
     exit;
 }
 
-FindWinner();
+$result = FindWinner();
 SumPoints();
 
 $result = CheckForWinner();
+
 if ($result != 5) {
     print json_encode(['winner' => $result]);
     PrepareNewGame();
@@ -71,13 +72,10 @@ switch ($request[0]) {
 
             switch ($result['result']) {
                 case 1:
-                print json_encode(['errormsg' => "Max players"]);
+                print json_encode(['errormesg' => "Max players"]);
                 exit;
                 case 2:
-                print json_encode(['errormsg' => "Username exists"]);
-                exit;
-                case 3:
-                print json_encode(['errormsg' => "Player already exists"]);
+                print json_encode(['errormesg' => "Token already exists"]);
                 exit;
                 default:
                 print json_encode(['success'=>"Player added"]);
@@ -85,19 +83,23 @@ switch ($request[0]) {
             
         } else {
             header("HTTP/1.1 400 Bad Request");
-            print json_encode(['errormsg' => "Method $method not allowed here."]);
+            print json_encode(['errormesg' => "Method $method not allowed here."]);
         }
     break;
     
     // DONE!
-    case 'Place_bets':
+    case 'PlaceBets':
         if ($method == 'POST'){
             $pid = FromTokenToPid();
             if (!isset($GLOBALS['input']['bet'])) {
                 print json_encode(['errormsg' => "You need to bet something."]);
                 exit;
             }
-            $result = Place_bets($pid);
+            $result = PlaceBets($pid);
+            if ($result == 0) {
+                print json_encode(['success'=>"Bet added"]);
+                exit;
+            }
             if ($result == 1) {
                 print json_encode(['errormsg' => "Advice: You will lose whatever happens."]);
                 exit;
@@ -106,7 +108,7 @@ switch ($request[0]) {
                 print json_encode(['errormsg' => "Error: You already have placed your bet."]);
                 exit;
             }
-            if ($result == 2){
+            if ($result == 3){
                 print json_encode(['errormsg' => "Error: Place a positive number."]);
                 exit;
             }
@@ -134,6 +136,10 @@ switch ($request[0]) {
                 }
                 $result = PlayCards($pid);
                 
+                if ($result == 0) {
+                    print json_encode(['success'=>"Card played"]);
+                    exit;
+                }
                 if ($result == 2 ) {
                     print json_encode(['errormsg' => "Cards not in player's hand!"]);
                     exit;
@@ -156,7 +162,7 @@ switch ($request[0]) {
     break;
     // DONE
 
-    case 'ShowTrumpClass':
+    case 'GetTrumpClass':
         if ($method == 'GET') {
             print json_encode(['msg' => Show_TrumpClass()]);
         } else {    
@@ -165,7 +171,16 @@ switch ($request[0]) {
         }
     break;
 
-    case 'ShowUsernames':
+    case 'GetBoard':
+        if ($method == 'GET') {
+            print json_encode(['msg' => GetBoard()]);
+        } else {    
+            header("HTTP/1.1 400 Bad Request");
+            print json_encode(['errormsg' => "Method $method not allowed here."]);
+        }
+    break;
+
+    case 'GetUsernames':
         if ($method == 'GET') {
             print json_encode(['msg' => GetUsernames()]);
         } else {    
