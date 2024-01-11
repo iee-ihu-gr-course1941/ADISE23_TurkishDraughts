@@ -1,5 +1,6 @@
-![wizard](https://github.com/iee-ihu-gr-course1941/ADISE23_WizardCardGame/assets/57770693/e847f688-f9e9-451e-b795-39560aca1d4b)
+Το Link του παιχνιδιού είναι: https://users.iee.ihu.gr/~iee2019079/ADISE23_WizardCardGame/index.php/
 
+![wizard](https://github.com/iee-ihu-gr-course1941/ADISE23_WizardCardGame/assets/57770693/e847f688-f9e9-451e-b795-39560aca1d4b)
 
 ## Table of Contents
 - [Περιγραφή](#Περιγραφή)
@@ -29,4 +30,82 @@ $` y_{n} = y_{n-1} - 10|i-k| `$ , για i≠**k**. <br>
 [Περιγραφή παιχνιδιού από την Κάισσα](https://youtu.be/gYILYQgS5_o?si=mdzMl9aZ71mZYcaT&t=59)
 ## Υλοποίηση
 
+### SQL Tables
+___
+#### cards
+
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ|ΤΙΜΕΣ|
+| ------------- |:-------------|:-----|
+|Cid|To ID της κάρτας|1-60|
+|Figure|Η "τιμή" της κάρτας|1-13, J, W|
+|Class|Η φυλή/κλάση που έχει η κάρτα|Human, Elves, Dwarves, Giants|
+|Pid*|Που βρίσκεται η κάρτα|0-6|
+\*Εάν είναι 0 βρίσκεται στην τράπουλα, 5 βρίσκεται έχει παιχτεί στο board, 6 είναι το ατού.
+#### players
+
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ|ΤΙΜΕΣ|
+|-------------|:-------------|:-----|
+| Pid | To ID του παίκτη| 1,2,3,4 |
+| Username | Η όνομα που έβαλε ο παίκτης | Varchar(50) |
+| Token | Το token που αποδόθηκε στο παίκτη |Varchar(50) |
+| Total_points | Οι συνολικοί πόντοι που συγκέντρωσε| Integer |
+#### gamestate
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ|ΤΙΜΕΣ|
+|-------------|:-------------|:-----|
+| PlayOrder | Η σειρά των παικτών| 1,2,3,4 |
+| Pid | To ID του παίκτη | 1,2,3,4 |
+| Rounds | Ο τρέχων γύρος του παιχνιδιού | Integer |
+| Bet | Τα tricks που δήλωσε ότι θα κερδίσει πριν ξεκινήσει το Round| Integer |
+| Rounds_won | Πόσα tricks κερδίζει στον τρέχων γύρο | Integer |
+| Card_played | Ποια κάρτα παίζει στο κάθε trick του γύρου | TINYINT |
+| Master_Class | Ποιο class πρέπει να ακολουθούν οι παίκτες | Human, Elves, Dwarves, Giants, J, W |
+| Trump_Class | Ποιο class είναι το ατού του γύρου | Human, Elves, Dwarves, Giants, J, W, None |
+#### gamedetails
+
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ|ΤΙΜΕΣ|
+|-------------|:-------------|:-----|
+| Status | Η κατάσταση του παιχνιδιού| Not active, Waiting, Playing, Finished |
+| Result | Ποιος παίκτης κέρδισε τελικά| P1,P2,P3,P4 |
+
+### API functions
+___
+#### GET
+
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ|ΕΠΙΣΤΡΕΦΕΙ|
+| ------------- |:-------------|:-----|
+|GetPlayersHand|Επιστρέφει το χέρι του παίκτη|Cid, Figure, Class|
+|GetTrumpClass|Επιστρέφει το ατού του γύρου|Class|
+|GetBoard|Επιστρέφει ποιες κάρτες έπαιξε ο κάθε παίκτης|Pid, Cid, Figure, Class|
+|GetUsernames|Επιστρέφει τα ονόμα των παικτών|Username|
+##### POST
+
+|ΟΝΟΜΑ|ΠΕΡΙΓΡΑΦΗ| ΜΕΤΑΒΛΗΤΗ  |EXITCODE |
+| ------------- |:-------------|:-----|-----:|  
+|AddPlayer|Επιστρέφει το χέρι του παίκτη|name|1, 2| 
+|PlaceBet|Επιστρέφει το ατού του γύρου|bet|1, 2, 3|
+|PlayCards|Επιστρέφει ποιες κάρτες έπαιξε ο κάθε παίκτης|c|1, 2, 3, 4| 
+#### AddPlayer
+|EXITCODE|ΜΗΝΥΜΑ|
+|-------------|:-------------| 
+|0|Player added|
+|1|Max players|
+|2|Token already exists|
+#### PlaceBet
+|EXITCODE|ΜΗΝΥΜΑ|
+|-------------|:-------------| 
+|0|Bet added|
+|1|Advice: You will lose whatever happens.|
+|2|Error: You already have placed your bet.|
+|3|Error: Place a positive number.|
+#### PlayCards
+|EXITCODE|ΜΗΝΥΜΑ|
+|-------------|:-------------| 
+|0|Card played|
+|1|Advice: Not your turn.|
+|2|Error: Card not in player's hand!.|
+|3|Error: Not the appropriate card, play same class!|
+|4|Error: Wait for all players to place a bet!|
 ## Αποτίμηση
+
+Ο κώδικας λειτουργεί ικανοποιητικά, εννοώντας ότι δουλεύει, ιδανικά θα ήθελα να προσθέσω ένα GUI, ώστε να μπορεί ο παίκτης να παίζει χωρίς να κοιτάζει συνεχώς τα Cids των καρτών.
+Πέραν αυτού, κάτι ακόμα που σκοπεύω είναι να απλοποιήσω λίγο τους πίνακες του παιχνιδιού και να τσεκάρω το workflow εκ νέου έτσι ώστε να είναι, πιο robust.
